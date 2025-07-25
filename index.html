@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣各地院檢資訊地圖</title>
+    <style>
+        /* --- General Styling --- */
+        :root {
+            --bg-color: #3b5970;
+            --text-color: #f0f0f0;
+            --highlight-color: #fff;
+            --border-color: #f0f0f0;
+            --modal-bg: rgba(40, 60, 80, 0.95);
+            /* NEW: Active button color */
+            --active-btn-bg: #ffc107; 
+            --active-btn-text: #333;
+            --inactive-btn-bg: #5a7890;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-top: 15px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            transition: opacity 0.3s;
+        }
+
+        /* --- Return Link --- */
+        .return-link {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0,0,0,0.3);
+            color: var(--text-color);
+            padding: 8px 15px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+            z-index: 1000;
+        }
+
+        .return-link:hover {
+            background-color: rgba(0,0,0,0.6);
+        }
+
+        /* --- NEW: Mode Switcher (Stateful Buttons) --- */
+        .mode-switcher {
+            display: flex;
+            background-color: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .switch-btn {
+            background-color: var(--inactive-btn-bg);
+            color: var(--text-color);
+            border: none;
+            padding: 10px 25px;
+            cursor: pointer;
+            font-size: 1.4em; /* Increased font size */
+            font-weight: bold;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .switch-btn:hover:not(.active) {
+            background-color: #748ea1;
+        }
+        
+        .switch-btn.active {
+            background-color: var(--active-btn-bg);
+            color: var(--active-btn-text);
+            cursor: default;
+        }
+
+
+        /* --- Map Container --- */
+        #map-container {
+            position: relative;
+            max-width: 800px;
+            width: 95%;
+            margin: 0 auto;
+            user-select: none;
+        }
+        
+        #map-base-img {
+            display: block;
+            width: 100%;
+        }
+
+        #map-interactive-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #map-interactive-svg path {
+            fill: transparent;
+            cursor: pointer;
+        }
+
+        /* --- Item Lists (Courts/Prosecutors) --- */
+        .item-list {
+            position: absolute;
+            list-style: none;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 8px;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease, visibility 0.3s;
+            z-index: 10;
+        }
+
+        .item-list li {
+            padding: 5px 10px; 
+            margin: 2px 0;
+            color: var(--text-color);
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+            font-size: 1.05em; /* Increased font size */
+        }
+
+        .item-list li:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: var(--highlight-color);
+        }
+
+        /* Positioning for each list */
+        #list-north { top: 10%; left: 40%; }
+        #list-central { top: 25%; left: 5%; }
+        #list-south { bottom: 25%; left: 5%; }
+        #list-east { top: 20%; right: 5%; }
+        #list-islands { bottom: 15%; left: 45%; }
+
+        .item-list.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        /* --- Info Modal --- */
+        #info-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease, visibility 0.3s;
+        }
+
+        #info-modal.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background-color: var(--modal-bg);
+            padding: 30px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            width: 80%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+        }
+        
+        #info-details {
+            white-space: pre-wrap;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 1.1em; /* Increased font size */
+            line-height: 1.7; /* Adjusted line height */
+        }
+
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--text-color);
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .close-button:hover {
+            color: #ff5555;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 1.8em; }
+            .switch-btn { font-size: 1.2em; padding: 8px 20px; }
+            .item-list li { font-size: 0.9em; }
+            .modal-content { width: 90%; padding: 20px; }
+            #info-details { font-size: 1em; }
+        }
+    </style>
+</head>
+<body>
+    
+    <div class="mode-switcher">
+        <button id="btn-court" class="switch-btn active">院</button>
+        <button id="btn-prosecutor" class="switch-btn">檢</button>
+    </div>
+
+    <h1 id="main-title">台灣各地法院</h1>
+    <a href="https://karoboard.netlify.app/" class="return-link">返回過勞儀表板</a>
+
+    <main>
+        <div id="map-container">
+            <img src="original_image.jpg" alt="台灣地圖" id="map-base-img">
+            
+            <svg id="map-interactive-svg" viewBox="0 0 800 1200" preserveAspectRatio="xMidYMid meet">
+                <path data-region="north" d="M439 292L431 278L445 272L447 263L472 259L491 262L503 252L513 241L533 226L546 211L558 191L567 172L583 150L587 129L577 114L571 96L577 75L587 60L597 45L611 39L634 38L653 43L669 61L671 85L664 100L651 106L631 108L627 120L629 133L613 151L617 171L630 184L645 186L649 203L637 217L628 223L625 241L612 254L602 267L581 277L561 289L545 301L533 306L514 306L500 317L484 316L465 305L453 294L439 292z"/>
+                <path data-region="central" d="M439 292L453 294L465 305L484 316L500 317L514 306L533 306L545 301L561 289L581 277L592 301L611 366L592 376L590 404L578 411L570 422L572 443L559 452L540 456L532 481L515 476L508 497L480 503L475 517L483 529L481 539L492 553L480 573L461 574L436 565L425 540L414 532L397 523L387 499L362 485L339 486L333 469L335 448L322 431L321 408L340 398L350 380L358 359L381 350L401 328L413 322L439 292z"/>
+                <path data-region="south" d="M436 565L461 574L480 573L492 553L481 539L483 529L475 517L480 503L508 497L515 476L532 481L540 456L545 464L542 492L555 528L549 539L536 544L523 553L512 569L511 582L522 612L522 633L509 635L504 645L511 672L521 688L530 710L523 723L515 744L528 775L541 791L552 805L559 813L551 830L539 837L521 843L499 845L478 853L459 850L447 843L440 827L434 804L424 785L421 757L420 720L431 716L437 694L425 683L427 662L412 650L400 648L392 631L393 607L409 590L436 565z M438 886L443 892L440 897L435 892z"/>
+                <path data-region="south" d="M490 600 L420 650 L450 780 L510 700 Z" />
+                <path data-region="east" d="M625 241L628 223L637 217L649 203L645 186L630 184L617 171L613 151L629 133L627 120L631 108L651 106L664 100L671 85L687 96L702 121L708 141L706 166L701 190L691 214L686 238L682 268L686 298L691 332L689 367L683 398L672 431L667 466L662 500L659 535L658 571L651 608L645 642L635 678L628 710L617 739L610 762L609 788L617 806L627 822L636 832L641 847L630 853L613 856L592 849L577 842L563 827L559 813L552 805L541 791L528 775L515 744L523 723L530 710L521 688L511 672L504 645L509 635L522 633L522 612L511 582L512 569L523 553L536 544L549 539L555 528L542 492L545 464L540 456L559 452L572 443L570 422L578 411L590 404L592 376L611 366L592 301L581 277L602 267L612 254L625 241z M662 899L668 893L673 897L670 904L663 904z"/>
+                <path data-region="islands" d="M198 427L209 423L213 429L208 434L199 435z M186 443L191 443L192 449L184 450z M176 461L183 457L189 460L186 466L177 465z M161 480L168 478L166 484L161 483z M174 489L179 487L181 490L177 493z M194 513L198 510L197 516L192 516z M224 532L230 527L241 528L241 535L232 538L225 536z M253 543L261 544L261 550L253 549z M235 558L242 555L245 561L239 563z M220 573L226 570L226 575L220 577z M204 597L209 595L209 600L203 601z M287 687L297 684L301 688L295 693L288 692z M283 703L289 700L289 706L284 707z"/>
+                <path data-region="islands" d="M40 840 L 320 840 L 320 1140 L 40 1140 Z" />
+            </svg>
+            
+            <ul id="list-north" class="item-list"></ul>
+            <ul id="list-central" class="item-list"></ul>
+            <ul id="list-south" class="item-list"></ul>
+            <ul id="list-east" class="item-list"></ul>
+            <ul id="list-islands" class="item-list"></ul>
+
+        </div>
+    </main>
+
+    <div id="info-modal">
+        <div class="modal-content">
+            <span class="close-button">×</span>
+            <div id="info-details"></div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const rawCourtData = `
+最高法院
+
+聯絡地址：100006臺北市中正區長沙街1段6號
+聯絡電話：(02)2314-1160
+訴訟轄區：全國
+連結資訊：tps.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：國史館郵局第164號
+專用電話：(02)2381-6606
+▍最高行政法院
+
+聯絡地址：100006臺北市中正區重慶南路1段126巷1號
+聯絡電話：(02)2311-3691
+訴訟轄區：全國
+連結資訊：tpa.judicial.gov.tw
+
+專用電話：(02)2381-2101
+▍懲戒法院
+
+聯絡地址：100203臺北市中正區重慶南路1段124號3樓
+聯絡電話：(02)2311-1639
+訴訟轄区：全國
+連結資訊：tpp.judicial.gov.tw
+
+專用電話：(02)2311-6021
+▍法官學院
+
+聯絡地址：111044臺北市士林區福國路103號
+聯絡電話：(02)8866-4433
+連結資訊：tpi.judicial.gov.tw
+▍臺灣高等法院
+
+聯絡地址：100205臺北市中正區博愛路127號
+聯絡電話：(02)2371-3261
+訴訟轄區：臺北市、新北市、基隆市、桃園市、新竹市、新竹縣、宜蘭縣
+連結資訊：tph.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：臺北北門郵局第11191號
+專用電話：(02)2389-3600
+▍臺北高等行政法院
+
+聯絡地址：111044臺北市士林區福國路101號
+聯絡電話：(02)2833-3822
+訴訟轄區：臺北市、新北市、桃園市、新竹縣（市）、基隆市、宜蘭縣、花蓮縣、金門縣、連江縣
+連結資訊：tpb.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：北投郵政6-153號
+專用電話：(02)2833-3115
+▍臺中高等行政法院
+
+聯絡地址：402201臺中市南區五權南路99號
+聯絡電話：(04)2260-0800
+訴訟轄區：苗栗縣、臺中市、彰化縣、南投縣、雲林縣
+連結資訊：tcb.judicial.gov.tw
+
+政風檢舉電子信箱：tcbged@judicial.gov.tw
+▍高雄高等行政法院
+
+聯絡地址：811676高雄市楠梓區興楠路180號
+聯絡電話：(07)357-3700
+訴訟轄區：嘉義縣（市）、臺南市、高雄市、屏東縣、臺東縣、澎湖縣
+連結資訊：ksb.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：高雄郵政6-27號
+專用電話：(07)357-3785
+▍智慧財產及商業法院
+
+聯絡地址：220408新北市板橋區縣民大道2段7號3樓
+聯絡電話：(02) 2272-6696
+傳真電話：(02) 2272-6690
+訴訟轄区：全國
+連結資訊：ipc.judicial.gov.tw
+
+檢舉貪瀆不法專用電子信箱：ipcjed@judicial.gov.tw
+專用電話：(02)2272-7060
+▍臺灣高等法院臺中分院
+
+聯絡地址：402201臺中市南區五權南路99號
+聯絡電話：(04)2260-0600
+訴訟轄區：臺中市、苗栗縣、彰化縣、南投縣
+連結資訊：tch.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：臺中郵政2122號
+專用電話：(04)2260-1077
+▍臺灣高等法院臺南分院
+
+聯絡地址：700201臺南市中西區中山路170號
+聯絡電話：(06)228-3101
+訴訟轄區：臺南市、雲林縣、嘉義市、嘉義縣
+連結資訊：tnh.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：臺南郵政204號
+專用電話：(06)225-6658
+▍臺灣高等法院高雄分院
+
+聯絡地址：804614高雄市鼓山區明誠三路586號
+聯絡電話：(07)552-3621
+訴訟轄區：高雄市、太平島、東沙島、屏東縣、澎湖縣
+連結資訊：ksh.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：高雄郵政2001號
+專用電話：(07)552-3626
+▍臺灣高等法院花蓮分院
+
+聯絡地址：970020花蓮縣花蓮市民權路127號
+聯絡電話：(03)822-5116
+訴訟轄區：臺灣省花蓮縣、臺東縣
+連結資訊：hlh.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：花蓮郵政7-45號
+專用電話：(03)822-6259
+▍福建高等法院金門分院
+
+聯絡地址：893014金門縣金城鎮民權路178號
+聯絡電話：(082)321-564
+訴訟轄區：福建省金門縣、連江縣
+連結資訊：kmh.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：金門郵政37號
+專用電話：(082)325-097
+▍臺灣臺北地方法院
+
+聯絡地址：100206臺北市中正區博愛路131號
+聯絡電話：(02)2314-6871
+連結資訊：tpd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+臺北簡易庭
+聯絡地址：100006臺北市中正區重慶南路1段126巷1號
+聯絡電話：(02)2314-3050
+事務分配區域：臺北市中正區、萬華區、大安區、中山區、松山區、信義區
+
+新店簡易庭
+聯絡地址：231204新北市新店區中興路1段248號
+聯絡電話：(02)8919-3866
+事務分配區域：臺北市文山區、新北市新店區、坪林區、石碇區、烏來區、深坑區
+
+檢舉貪瀆不法專用信箱：國史館郵局第247號
+專用電話：(02)2381-2285
+▍臺灣新北地方法院
+
+聯絡地址：236202 新北市土城區金城路2段249號(民事庭、刑事庭、行政訴訟庭、提存所、登記處)
+聯絡電話：(02)2261-6714
+連結資訊：pcd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+板橋院區(少年法庭、家事法庭、板橋簡易庭、調查保護室)
+聯絡地址：220223新北市板橋區民生路1段30巷1號
+聯絡電話：(02)2961-7322
+事務分配區域：新北市板橋區、永和區、中和區、三峽區、鶯歌區、樹林區、土城區
+
+三重簡易庭
+聯絡地址：241040新北市三重區重新路3段145號
+聯絡電話：(02)2971-0166
+事務分配區域：新北市三重區、蘆洲區、新莊區、泰山區、五股區、林口區
+
+租賃院區(民事執行處、非訟中心、公證處)
+聯絡地址：236013新北市土城區青雲路152號6樓
+聯絡電話：(02)2261-6714 總機 0
+
+檢舉貪瀆不法專用信箱：板橋郵政13-10號
+檢舉貪瀆不法專用電話：(02)2262-3795
+▍臺灣士林地方法院
+
+聯絡地址：111035臺北市士林區士東路190號
+聯絡電話：(02)2831-2321
+連結資訊：sld.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+士林簡易庭
+聯絡地址：111062臺北市士林區重慶北路4段2號
+聯絡電話：(02)2813-1289
+事務分配區域：臺北市士林區、大同區、北投區、新北市石門區、八里區、淡水區、三芝區
+
+內湖簡易庭
+聯絡地址：114020臺北市內湖區民權東路6段91號
+聯絡電話：(02)2791-1521
+事務分配區域：臺北市內湖區、南港區、新北市汐止區
+
+檢舉貪瀆不法專用電子信箱：sldged@judicial.gov.tw
+檢舉貪瀆不法專用電話：：(02)2834-1590
+▍臺灣桃園地方法院
+
+聯絡地址：330060桃園市桃園區正光路888號
+聯絡電話：(03)339-6100
+連結資訊：tyd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+桃園簡易庭
+聯絡地址：330060桃園市桃園區正光路888號
+聯絡電話：(03)339-6100
+事務分配区域：桃園市桃園區、龜山區、八德區、大溪區、復興區、大園區、蘆竹區
+
+中壢簡易庭
+聯絡地址：320028桃園市中壢區中華路2段388號
+聯絡電話：(03)339-6100
+事務分配区域：桃園市中壢區、平鎮區、楊梅區、新屋區、龍潭區、觀音區
+
+檢舉貪瀆不法專用信箱：桃園郵政548號
+專用電話：(03)339-6235
+▍臺灣新竹地方法院
+
+聯絡地址：302050新竹縣竹北市興隆路2段265號
+聯絡電話：（03）658-6123
+連結資訊：scd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+新竹簡易庭
+聯絡地址：302050新竹縣竹北市興隆路2段265號
+聯絡電話：(03)658-6123轉分機1202、1203
+事務分配區域：新竹市
+
+竹東簡易庭
+聯絡地址：310005新竹縣竹東鎮中正路202號
+聯絡電話：(03)594-3011
+事務分配區域：新竹縣竹東鎮、芎林鄉、寶山鄉、北埔鄉、峨眉鄉、橫山鄉、五峰鄉、尖石鄉
+
+竹北簡易庭
+聯絡地址： 302050新竹縣竹北市興隆路2段265號
+聯絡電話：（03）658-6123
+事務分配區域：新竹縣竹北市、湖口鄉、新豐鄉、新埔鎮、關西鎮
+
+檢舉貪瀆不法專用信箱：新竹郵政193號
+專用電話：(03)668-8124
+▍臺灣苗栗地方法院
+
+聯絡地址：360012苗栗縣苗栗市中正路1149號
+聯絡電話：(037)330-083
+連結資訊：mld.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：苗栗郵政118號
+專用電話：(037)335-970
+▍臺灣臺中地方法院
+
+聯絡地址：403601臺中市西區自由路1段91號
+聯絡電話：(04)2223-2311
+連結資訊：tcd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+臺中簡易庭
+聯絡地址：403601臺中市西區自由路1段91號
+聯絡電話：(04)2223-2311
+事務分配區域：臺中市東區、西區、南區、中區、北區、北屯區、西屯區、南屯區、霧峰區、大里區、太平區、烏日區
+
+豐原簡易庭
+聯絡地址：427212臺中市潭子區豐興路1段139號
+聯絡電話：(04)2538-1698、(04)2538-1700
+事務分配区域：臺中市豐原區、大雅區、潭子區、神岡區、東勢區、石岡區、新社區、和平區
+
+沙鹿簡易庭
+聯絡地址：433107臺中市沙鹿區中山路689號
+聯絡電話：(04)2623-6621
+事務分配區域：臺中市清水區、沙鹿區、梧棲區、大甲區、大安區、外埔區、后里區、大肚區、龍井區
+
+檢舉貪瀆不法專用信箱：臺中郵政2255號
+專用電話：(04)2229-6214
+▍臺灣南投地方法院
+
+聯絡地址：540240南投縣南投市中興路759號
+聯絡電話：(049)224-2590
+連結資訊：ntd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+南投簡易庭
+聯絡地址：551008南投縣名間鄉彰南路356之7號
+聯絡電話：(049)223-9550
+事務分配區域：南投市、草屯鎮、竹山鎮、集集鎮、中寮鄉、名間鄉、鹿谷鄉、水里鄉、信義鄉
+
+埔里簡易庭
+聯絡地址：545008南投縣埔里鎮南環路640號
+聯絡電話：(049)299-5544
+事務分配區域：埔里鎮、國姓鄉、仁愛鄉、魚池鄉
+
+檢舉貪瀆不法專用信箱：南投郵政130號
+專用電話：(049)224-2346
+▍臺灣彰化地方法院
+
+聯絡地址：510201彰化縣員林市員林大道2段1號
+聯絡電話：(04)834-3171
+連結資訊：chd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+彰化簡易庭
+聯絡地址：508002彰化縣和美鎮東萊路275號
+聯絡電話：(04)735-8170
+事務分配區域：彰化縣彰化市、伸港鄉、線西鄉、和美鎮、花壇鄉、芬園鄉、鹿港鎮、福興鄉、秀水鄉
+
+員林簡易庭
+聯絡地址：510201彰化縣員林市員林大道2段1號
+聯絡電話：(04)834-3171
+事務分配區域：彰化縣員林市、永靖鄉、溪湖鎮、埔鹽鄉、埔心鄉、大村鄉
+
+北斗簡易庭
+聯絡地址：522012彰化縣田尾鄉饒平村建平路2段91號
+聯絡電話：(04)883-4331
+事務分配區域：彰化縣二林鎮、竹塘鄉、大城鄉、芳苑鄉、北斗鎮、田尾鄉、埤頭鄉、溪州鄉、田中鎮、社頭鄉、二水鄉
+
+檢舉貪瀆不法專用信箱：員林郵政163號
+專用電話：(04)834-3175
+▍臺灣雲林地方法院
+
+聯絡地址：632202雲林縣虎尾鎮明正路38號
+聯絡電話：(05)633-6511
+連結資訊：uld.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+虎尾簡易庭
+聯絡地址：632004雲林縣虎尾鎮明正路40巷5號
+聯絡電話：(05)633-6511
+事務分配區域：雲林縣虎尾鎮、土庫鎮、褒忠鄉、元長鄉、西螺鎮、二崙鄉、崙背鄉
+
+北港簡易庭
+聯絡地址：651007雲林縣北港鎮文仁路471號
+聯絡電話：(05)783-1546
+事務分配區域：雲林縣臺西鄉、東勢鄉、麥寮鄉、四湖鄉、北港鎮、水林鄉、口湖鄉
+
+斗六簡易庭
+聯絡地址：640212雲林縣斗六市公明路41號
+聯絡電話：(05)534-2433
+事務分配區域：雲林縣斗六市、林內鄉、莿桐鄉、斗南鎮、大埤鄉、古坑鄉
+
+檢舉貪瀆不法專用信箱：虎尾郵政56號
+專用電話：(05)633-3956
+▍臺灣嘉義地方法院
+
+聯絡地址：600249嘉義市東區林森東路282號
+聯絡電話：(05)278-3671
+連結資訊：cyd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+嘉義簡易庭
+聯絡地址：600054嘉義市東區文化路308之1號
+聯絡電話：(05)277-4460
+事務分配區域：嘉義市、嘉義縣民雄鄉、大林鎮、溪口鄉、新港鄉、竹崎鄉、梅山鄉、阿里鄉、水上鄉、中埔鄉、番路鄉、大埔鄉
+
+朴子簡易庭
+聯絡地址：613016嘉義縣朴子市朴子三路2號
+聯絡電話：(05)362-3527
+事務分配區域：嘉義縣朴子鎮、東石鄉、六腳鄉、義竹鄉、布袋鎮、太保市、鹿草鄉
+
+檢舉貪瀆不法專用信箱：嘉義郵政1-46號
+專用電話：(05)278-6285
+▍臺灣臺南地方法院
+
+聯絡地址：708202臺南市安平區健康路3段308號
+聯絡電話：(06)295-6566
+連結資訊：tnd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+臺南簡易庭
+聯絡地址：708202臺南市安平區健康路3段308號
+聯絡電話：(06)295-6566
+事務分配區域：臺南市東區、南區、北區、安南區、安平區、中西區、歸仁區、仁德區、關廟區、龍崎區
+
+新市簡易庭
+聯絡地址：744004臺南市新市區富強路12號
+聯絡電話：(06)599-8959
+事務分配區域：臺南市永康區、新市區、新化區、山上區、左鎮區、玉井區、楠西區、南化區、善化區、大內區、安定區
+
+柳營簡易庭
+聯絡地址：736212臺南市柳營區人和里義士路5段601號
+聯絡電話：(06)622-5180
+事務分配區域：臺南市佳里區、西港區、七股區、麻豆區、下營區、六甲區、官田區、學甲區、北門區、將軍區、白河區、東山區、後壁區、鹽水區、柳營區、新營區
+
+檢舉貪瀆不法專用電子信箱：tndged@judicial.gov.tw
+專用電話：(06)295-6004
+▍臺灣高雄地方法院
+
+聯絡地址：801201 高雄市前金區河東路188號
+聯絡電話：(07)216-1418
+連結資訊：ksd.judicial.gov.tw
+
+臺灣高雄地方法院 第二辦公大樓
+聯絡地址：800301 高雄市新興區中正三路25號(高雄市政府財稅行政大樓第9、10、11樓)
+聯絡電話：07-2228356
+業務單位：民事執行處、提存所、登記處
+
+所轄簡易庭所在地及其事務分配區域
+高雄簡易庭
+聯絡地址：801201高雄市前金區河東路188號
+聯絡電話：(07)216-1225
+事務分配區域：高雄市鹽埕區、鼓山區、三民區、新興區、前金區、苓雅區、前鎮區、旗津區、小港區、太平島、東沙島
+
+鳳山簡易庭
+聯絡地址：830037高雄市鳳山區國泰路2段96號
+聯絡電話：(07)743-2027
+事務分配區域：高雄市鳳山區、林園區、大寮區
+
+檢舉貪瀆不法專用信箱：高雄郵政1955號
+專用電話：(07)216-1403
+▍臺灣橋頭地方法院
+
+聯絡地址：825203高雄市橋頭區經武路911號
+聯絡電話：（07）6110030
+連結資訊：ctd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+橋頭簡易庭
+聯絡地址： 825203高雄市橋頭區經武路911號
+聯絡電話：（07）6110030
+事務分配區域：高雄市橋頭區、左營區、楠梓區、大樹區、鳥松區、 仁武區、大社區
+
+岡山簡易庭
+聯絡地址： 820211高雄市岡山區岡山南路57號
+聯絡電話：（07）6250875
+事務分配區域：高雄市岡山區、燕巢區、永安區、彌陀區、梓官區、路竹區、阿蓮區、湖內區、茄萣區、田寮區
+
+旗山簡易庭
+聯絡地址： 842046高雄市旗山區民生二街33號
+聯絡電話：（07）6622045
+事務分配區域：高雄市旗山區、美濃區、內門區、甲仙區、杉林區、六龜區、那瑪夏區、桃源區、茂林區
+
+檢舉貪瀆不法專用電子信箱：ctdged@judicial.gov.tw
+專用電話：(07)611-0502
+▍臺灣屏東地方法院
+
+聯絡地址：900215屏東縣屏東市棒球路9號
+聯絡電話：(08)755-0611
+連結資訊：ptd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+屏東簡易庭
+聯絡地址：900202屏東縣屏東市合作街43號
+聯絡電話：(08)755-1655
+事務分配區域：屏東縣屏東市、長治鄉、麟洛鄉、萬丹鄉、里港鄉、高樹鄉、鹽埔鄉、九如鄉、三地門鄉、霧臺鄉
+
+潮州簡易庭
+聯絡地址：920012屏東縣潮州鎮光春路300號
+聯絡電話：(08)789-8201
+事務分配區域：屏東縣潮州鎮、萬巒鄉、竹田鄉、內埔鄉、新埤鄉、泰武鄉、來義鄉、瑪家鄉、東港鎮、林邊鄉、南州鄉、新園鄉、琉球鄉、崁頂鄉、枋寮鄉、佳冬鄉、春日鄉、獅子鄉、枋山鄉、牡丹鄉、恆春鎮、車城鄉、滿州鄉
+
+檢舉貪瀆不法專用信箱：屏東郵政4-16號
+專用電話：(08)753-5612
+▍臺灣臺東地方法院
+
+聯絡地址：950206臺東縣臺東市博愛路128號
+聯絡電話：(089)310-130
+連結資訊：ttd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+臺東簡易庭
+聯絡地址：950206臺東縣臺東市博愛路128號
+聯絡電話：(089)310-130
+事務分配區域：臺東縣臺東市、綠島鄉、蘭嶼鄉、卑南鄉、關山鎮、池上鄉、鹿野鄉、延平鄉、海端鄉、大武鄉、達仁鄉、太麻里鄉、金峰鄉、成功鎮、東河鄉、長濱鄉
+
+檢舉貪瀆不法專用信箱：臺東郵政54號
+專用電話：(089)335-350
+▍臺灣花蓮地方法院
+
+聯絡地址：970019花蓮縣花蓮市府前路15號
+聯絡電話：(03)822-5144
+連結資訊：hld.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+花蓮簡易庭
+聯絡地址：970022花蓮縣花蓮市球崙一路286號
+聯絡電話：(03)823-3422
+事務分配區域：花蓮縣花蓮市、新城鄉、秀林鄉、吉安鄉、壽豐鄉、鳳林鎮、光復鄉、萬榮鄉、豐濱鄉
+
+玉里簡易庭
+聯絡地址：981001花蓮縣玉里鎮莊敬路69號
+聯絡電話：(03)888-0480
+事務分配區域：花蓮縣玉里鎮、富里鄉、卓溪鄉、瑞穗鄉
+
+檢舉貪瀆不法專用信箱：花蓮郵政7-48號
+專用電話：(03)822-3389
+▍臺灣宜蘭地方法院
+
+聯絡地址：260011宜蘭縣宜蘭市縣政西路1號
+聯絡電話：(03)925-2001
+連結資訊：ild.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+宜蘭簡易庭
+聯絡地址：260011宜蘭縣宜蘭市縣政西路1號
+聯絡電話：(03)925-2001
+事務分配區域：宜蘭縣宜蘭市、員山鄉、礁溪鄉、頭城鄉、壯圍鄉
+
+羅東辦公室
+聯絡地址：268018宜蘭縣五結鄉仁愛路2段88號
+聯絡電話：(03)965-5550
+事務分配區域：宜蘭縣羅東鎮、冬山鄉、五結鄉、蘇澳鎮、南澳鄉、三星鄉、大同鄉
+
+檢舉貪瀆不法專線電話：(03)925-2045
+▍臺灣基隆地方法院
+
+聯絡地址：201205基隆市東信路176號
+聯絡電話：(02)2465-2171
+連結資訊：kld.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+基隆簡易庭
+聯絡地址：201205基隆市東信路176號
+聯絡電話：(02)2465-2171
+事務分配區域：基隆市、新北市金山區、萬里區、瑞芳區、貢寮區、雙溪區、平溪區
+
+檢舉貪瀆不法專用信箱：基隆郵政13-13號
+專用電話：(02)2466-8936
+▍臺灣澎湖地方法院
+
+聯絡地址：880008澎湖縣馬公市西文里西文澳 310 號
+聯絡電話：(06)921-6777
+連結資訊：phd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+馬公簡易庭
+聯絡地址：880008澎湖縣馬公市西文里西文澳310號
+聯絡電話：(06)921-6777
+事務分配區域：澎湖縣馬公市、湖西鄉、白沙鄉、西嶼鄉、七美鄉、望安鄉
+
+檢舉貪瀆不法專用信箱：澎湖郵政107號
+專用電話：(06)921-5222
+▍臺灣高雄少年及家事法院
+
+聯絡地址：811513高雄市楠梓區興楠路182號
+聯絡電話：(07)357-3511
+管轄區域：本院專責處理高雄地區之少年及家事業務，管轄地區包括高雄市、太平島、東沙島
+連結資訊：ksy.judicial.gov.tw
+
+檢舉貪瀆不法專用信箱：高雄郵政6-124號
+專用電話：(07)3573601
+▍福建金門地方法院
+
+聯絡地址：893014金門縣金城鎮民權路178號
+聯絡電話：(082)327361-5
+連結資訊：kmd.judicial.gov.tw
+
+所轄簡易庭所在地及其事務分配區域
+金城簡易庭
+聯絡地址：893014金門縣金城鎮民權路178號
+聯絡電話：(082)327361-5
+事務分配區域：金門縣金城鎮、金湖鎮、金沙鎮、金寧鄉、烈嶼鄉、烏坵鄉
+
+檢舉貪瀆不法專用信箱：金門郵政26號
+專用電話：(082)327-361
+▍福建連江地方法院
+
+聯絡地址：209002連江縣南竿鄉復興村209號
+聯絡電話：總機一(0836) 22477、總機二(0836) 22523
+事務分配區域：南竿鄉、北竿鄉、莒光鄉、東引鄉
+連結資訊：lcd.judicial.gov.tw
+
+檢舉貪瀆不法專用電子信箱：lcdged@judicial.gov.tw
+專用電話：(0836)22477
+`;
+
+        const rawProsecutorData = `
+【北區】
+
+臺灣高等檢察署智慧財產檢察分署
+管轄區域：與智慧財產法院相對應之二審檢察署。
+網址：http://www.thip.moj.gov.tw
+電話：(02)2371-3261
+地址：100006 臺北市博愛路164號5樓
+
+臺灣臺北地方檢察署
+網址：http://www.tpc.moj.gov.tw
+電話：(02)2314-6881
+地址：10048臺北市中正區博愛路131號
+
+臺灣士林地方檢察署
+管轄區域：臺北市士林、北投、南港等區。
+網址：http://www.slc.moj.gov.tw
+電話：(02)2833-1911
+地址：11154臺北市士林區士東路190號
+
+臺灣新北地方檢察署
+管轄區域：新北市（前臺北縣）。
+網址：http://www.pcc.moj.gov.tw
+電話：(02)2261-6192
+地址：23652 新北市土城區金城路二段249號
+
+臺灣桃園地方檢察署
+管轄區域：桃園市（前桃園縣）。
+網址：http://www.tyc.moj.gov.tw
+電話：(03)337-0737
+地址：33053 桃園市法治路1號
+
+臺灣新竹地方檢察署
+管轄區域：新竹地區。
+網址：http://www.scc.moj.gov.tw
+電話：(03)525-4102
+地址：30274 新竹縣竹北市興隆路2段161號
+
+臺灣基隆地方檢察署
+管轄區域：基隆地區。
+網址：http://www.klc.moj.gov.tw
+電話：(02)2465-1171
+地址：20102 基隆市信義區東信路178號
+
+最高檢察署
+網址：https://www.tps.moj.gov.tw/
+電話：(02)2316-7000
+地址：100006臺北市中正區貴陽街一段235號
+
+【中區】
+
+臺灣高等檢察署臺中檢察分署
+管轄區域：臺中縣、臺中市、彰化縣、南投縣、雲林縣、嘉義縣。
+網址：http://www.tch.moj.gov.tw
+電話：(04)2223-2311
+地址：40342 臺中市自由路一段91號
+
+臺灣苗栗地方檢察署
+管轄區域：苗栗縣。
+網址：http://www.mlc.moj.gov.tw
+電話：(037)353-410
+地址：36052 苗栗市中正路1149號
+
+臺灣臺中地方檢察署
+管轄區域：臺中地區。
+網址：http://www.tcc.moj.gov.tw
+電話：(04)2223-2311
+地址：40342臺中市西區自由路1段91號
+
+臺灣彰化地方檢察署
+管轄區域：彰化縣。
+網址：http://www.chc.moj.gov.tw
+電話：(04)835-7274
+地址：51002 彰化縣員林鎮中山路2段240號
+
+臺灣南投地方檢察署
+管轄區域：南投縣。
+網址：http://www.ntc.moj.gov.tw
+電話：(049)224-2602
+地址：54050 南投縣南投市中興路757號
+
+【南區】
+
+臺灣高等檢察署臺南檢察分署
+管轄區域：臺灣嘉義（含雲林地區）、臺南、高雄（含屏東、澎湖地區）3個地方法院檢察處。
+網址：http://www.tnh.moj.gov.tw
+電話：(06)228-2111
+地址：70003臺南市中山路170號
+
+臺灣高等檢察署高雄檢察分署
+管轄區域：高雄縣、高雄市、屏東縣及澎湖縣。
+網址：http://www.ksh.moj.gov.tw
+電話：(07)552-4111
+地址：80402高雄市鼓山區明誠三路586號
+
+臺灣雲林地方檢察署
+管轄區域：雲林縣。
+網址：http://www.ulc.moj.gov.tw
+電話：(05)633-4991
+地址：63244 雲林縣虎尾鎮明正路38號
+
+臺灣嘉義地方檢察署
+管轄區域：嘉義地區。
+網址：http://www.cyc.moj.gov.tw
+電話：(05)278-2601
+地址：60072 嘉義市東區林森東路286號
+
+臺灣臺南地方檢察署
+管轄區域：臺南地區。
+網址：http://www.tnc.moj.gov.tw
+電話：(06)295-9731
+地址：70846 臺南市安平區健康路三段310號
+
+臺灣高雄地方檢察署
+管轄區域：高雄地區（部分區域劃分至橋頭地檢署）。
+網址：http://www.ksc.moj.gov.tw
+電話：(07)216-1468
+地址：80144 高雄市前金區河東路188號
+
+臺灣橋頭地方檢察署
+管轄區域：高雄市部分區域。
+網址：http://www.qtc.moj.gov.tw
+電話：(07)613-1765
+地址：82546 高雄市橋頭區經武路868號
+
+臺灣屏東地方檢察署
+管轄區域：屏東地區。
+網址：http://www.ptc.moj.gov.tw
+電話：(08)753-5211
+地址：90006 屏東市棒球路11號
+
+【東區】
+
+臺灣高等檢察署花蓮檢察分署
+管轄區域：花蓮縣、臺東縣。
+網址：http://www.hlh.moj.gov.tw
+電話：(03)822-5112
+地址：97001花蓮縣花蓮市民權路127號
+
+臺灣宜蘭地方檢察署
+管轄區域：宜蘭地區。
+網址：http://www.ilc.moj.gov.tw
+電話：(03)925-3000
+地址：26060宜蘭市縣政西路3號
+
+臺灣花蓮地方檢察署
+管轄區域：花蓮地區。
+網址：http://www.hlc.moj.gov.tw
+電話：(03)822-6153
+地址：97058 花蓮縣花蓮市府前路15號
+
+臺灣臺東地方檢察署
+管轄區域：臺東地區。
+網址：http://www.ttc.moj.gov.tw
+電話：(089)310180
+地址：95048臺東市浙江路310號
+
+【外島地區】
+
+臺灣澎湖地方檢察署
+管轄區域：澎湖地區。
+網址：http://www.phc.moj.gov.tw
+電話：(06)921-1699
+地址：88048 澎湖縣馬公市西文里西文澳309號
+`;
+
+        // --- DOM Elements ---
+        const btnCourt = document.getElementById('btn-court');
+        const btnProsecutor = document.getElementById('btn-prosecutor');
+        const mainTitle = document.getElementById('main-title');
+        const svgPaths = document.querySelectorAll('#map-interactive-svg path');
+        const itemLists = document.querySelectorAll('.item-list');
+        const modal = document.getElementById('info-modal');
+        const modalContent = document.getElementById('info-details');
+        const closeModalButton = document.querySelector('.close-button');
+
+        // --- Data Storage ---
+        let currentMode = 'court'; // 'court' or 'prosecutor'
+        let allCourtsData = {};
+        let allProsecutorsData = {};
+        let courtsByRegion = { north: [], central: [], south: [], east: [], islands: [] };
+        let prosecutorsByRegion = { north: [], central: [], south: [], east: [], islands: [] };
+        let currentOpenItem = null;
+        let hideTimeout;
+
+        // --- DATA PROCESSING FUNCTIONS ---
+        function parseCourtData() {
+            const courtBlocks = rawCourtData.trim().split('▍');
+            
+            courtBlocks.forEach(block => {
+                const trimmedBlock = block.trim();
+                if (trimmedBlock === "") return;
+
+                const lines = trimmedBlock.split('\n');
+                const name = lines[0].trim();
+                const info = trimmedBlock;
+                let address = '';
+                lines.forEach(line => {
+                    if (line.includes('聯絡地址：')) {
+                        address = line.split('：')[1] || '';
+                    }
+                });
+                allCourtsData[name] = { name, address, info };
+            });
+
+            const northKeywords = ['臺北', '新北', '基隆', '桃園', '新竹'];
+            const centralKeywords = ['苗栗', '臺中', '彰化', '南投'];
+            const southKeywords = ['雲林', '嘉義', '臺南', '高雄', '屏東'];
+            const eastKeywords = ['花蓮', '臺東', '宜蘭'];
+            const islandsKeywords = ['澎湖', '金門', '連江'];
+            
+            for (const name in allCourtsData) {
+                const court = allCourtsData[name];
+                let assigned = false;
+                const checkAndAssign = (keywords, region) => {
+                    if (!assigned && keywords.some(kw => (court.address && court.address.includes(kw)) || court.name.includes(kw) )) {
+                        courtsByRegion[region].push(court);
+                        assigned = true;
+                    }
+                };
+                checkAndAssign(islandsKeywords, 'islands');
+                checkAndAssign(eastKeywords, 'east');
+                checkAndAssign(southKeywords, 'south');
+                checkAndAssign(centralKeywords, 'central');
+                checkAndAssign(northKeywords, 'north');
+            }
+        }
+
+        function parseProsecutorData() {
+            const regionalBlocks = rawProsecutorData.trim().split('【').slice(1);
+            const regionMap = { '北區': 'north', '中區': 'central', '南區': 'south', '東區': 'east', '外島地區': 'islands' };
+            
+            regionalBlocks.forEach(block => {
+                const parts = block.split('】');
+                const regionName = parts[0].trim();
+                const regionKey = regionMap[regionName];
+                if (!regionKey || !parts[1]) return;
+
+                const entries = parts[1].trim().split('\n\n');
+                entries.forEach(entry => {
+                    const entryLines = entry.trim().split('\n');
+                    if (entryLines.length === 0 || entryLines[0].trim() === '') return;
+                    const name = entryLines[0].trim();
+                    const info = entry.trim();
+                    const prosecutor = { name, info };
+                    
+                    allProsecutorsData[name] = prosecutor;
+                    prosecutorsByRegion[regionKey].push(prosecutor);
+                });
+            });
+        }
+
+        // --- UI UPDATE FUNCTIONS ---
+        function populateLists(dataByRegion) {
+            itemLists.forEach(list => list.innerHTML = '');
+
+            for (const region in dataByRegion) {
+                const listElement = document.getElementById(`list-${region}`);
+                if (listElement) {
+                    const items = [...dataByRegion[region]];
+                    
+                    if (currentMode === 'court') { 
+                        items.sort((a, b) => {
+                            const getScore = (name) => {
+                                if (name.includes('地方法院')) return 1;
+                                if (name.includes('高等法院')) return 2;
+                                return 3;
+                            };
+                            const scoreA = getScore(a.name);
+                            const scoreB = getScore(b.name);
+                            if (scoreA !== scoreB) return scoreA - scoreB;
+                            return a.name.localeCompare(b.name, 'zh-Hant');
+                        });
+                    } else { // prosecutor mode sorting
+                        items.sort((a, b) => {
+                            const getScore = (name) => {
+                                if (name.includes('地方檢察署')) return 1;
+                                if (name.includes('高等檢察署')) return 2;
+                                if (name.includes('最高檢察署')) return 3;
+                                return 2; // Default for others
+                            };
+                            const scoreA = getScore(a.name);
+                            const scoreB = getScore(b.name);
+                            if (scoreA !== scoreB) return scoreA - scoreB;
+                            return a.name.localeCompare(b.name, 'zh-Hant');
+                        });
+                    }
+
+                    items.forEach(item => {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = item.name;
+                        listItem.dataset.itemName = item.name;
+                        listElement.appendChild(listItem);
+                    });
+                }
+            }
+        }
+
+        function updateDisplay() {
+            const isProsecutorMode = (currentMode === 'prosecutor');
+            mainTitle.textContent = isProsecutorMode ? '台灣各地地檢署' : '台灣各地法院';
+            const dataToUse = isProsecutorMode ? prosecutorsByRegion : courtsByRegion;
+            populateLists(dataToUse);
+        }
+
+        function setMode(mode) {
+            if (currentMode === mode) return; // No change
+            currentMode = mode;
+            
+            if (mode === 'court') {
+                btnCourt.classList.add('active');
+                btnProsecutor.classList.remove('active');
+            } else {
+                btnCourt.classList.remove('active');
+                btnProsecutor.classList.add('active');
+            }
+            updateDisplay();
+        }
+
+        // --- MODAL & LIST VISIBILITY FUNCTIONS ---
+        function showModal(itemName) {
+            const dataSource = (currentMode === 'prosecutor') ? allProsecutorsData : allCourtsData;
+            if (dataSource[itemName]) {
+                modalContent.textContent = dataSource[itemName].info;
+                modal.classList.add('visible');
+                currentOpenItem = itemName;
+            }
+        }
+
+        function hideModal() {
+            modal.classList.remove('visible');
+            currentOpenItem = null;
+        }
+
+        function showList(region) {
+            clearTimeout(hideTimeout);
+            itemLists.forEach(l => {
+                if (l.id !== `list-${region}`) l.classList.remove('visible');
+            });
+            document.getElementById(`list-${region}`).classList.add('visible');
+        }
+
+        function hideAllLists() {
+            hideTimeout = setTimeout(() => {
+                itemLists.forEach(l => l.classList.remove('visible'));
+            }, 100);
+        }
+
+        // --- EVENT LISTENERS ---
+        btnCourt.addEventListener('click', () => setMode('court'));
+        btnProsecutor.addEventListener('click', () => setMode('prosecutor'));
+        
+        svgPaths.forEach(path => {
+            path.addEventListener('mouseover', () => showList(path.dataset.region));
+            path.addEventListener('mouseleave', hideAllLists);
+        });
+
+        itemLists.forEach(list => {
+            list.addEventListener('mouseover', () => clearTimeout(hideTimeout));
+            list.addEventListener('mouseleave', hideAllLists);
+            list.addEventListener('click', (e) => {
+                if (e.target.tagName === 'LI') {
+                    const itemName = e.target.dataset.itemName;
+                    if (modal.classList.contains('visible') && currentOpenItem === itemName) {
+                        hideModal();
+                    } else {
+                        showModal(itemName);
+                    }
+                }
+            });
+        });
+
+        closeModalButton.addEventListener('click', hideModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
+
+        // --- INITIALIZATION ---
+        function initialize() {
+            parseCourtData();
+            parseProsecutorData();
+            setMode('court'); // Set initial mode
+        }
+
+        initialize();
+    });
+    </script>
+
+</body>
+</html>
