@@ -1191,7 +1191,11 @@
         function initialize() {
             parseCourtData();
             parseProsecutorData();
-            setMode('court'); // Set initial mode
+            // --- FIX ---
+            // Set the initial UI state directly instead of calling setMode.
+            // This ensures the initial view is always rendered correctly.
+            btnCourt.classList.add('active'); // Default button
+            updateDisplay(); // Force initial render
         }
 
         initialize();
